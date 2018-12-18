@@ -6,22 +6,27 @@ from ryu.ofproto import ofproto_v1_2
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet   
 from ryu.lib.packet import ether_types
-
+from ryu.lib.packet import arp
+from ryu.lib.packet import ipv4
+from ryu.lib.packet import icmp
 
 class Controller(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_2.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
         super(Controller, self).__init__(*args, **kwargs)
+        self.ip_addr="10.0.1.0"
+        self.hw_addr="66:66:66:66:66:66"
         self.mac_to_port = {}  # Records the mac-port mapping
 
+    
     # This function helps add flow entry to switch's flow table 
     # TODO: Insert different flow entries.
     #       Some action should be redirected to match other flow table 
     #       (Multiple flow table pipeline packet processing)
     def add_flow(self, datapath, port, dst, src, actions):
         ofproto = datapath.ofproto
-        print("new flow entry %s %s %s", port, dst, src)
+     #   print("new flow entry %s %s %s", port, dst, src)
 
         # The flow entry
         match = datapath.ofproto_parser.OFPMatch(in_port=port,
@@ -54,21 +59,35 @@ class Controller(app_manager.RyuApp):
         ################## TODO: Extract and filter packet here ##############
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
-        print(pkt.protocols)  # Can extract different protocols here
-        
-
+        #print(pkt.protocols)  # Can extract different protocols here
+  
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             return
+
+	# part only for controller's ping
+	pkt_arp = pkt.get_protocol(arp.arp)
+	# step1 : arp
+	if pkt_arp and pkt_arp.opcode == arp.ARP_REQUEST and pkt_arp.dst_ip == self.ip_addr: 
+		self._handle_arp(datapath, in_port, eth, pkt_arp)
+		return
+	# step2 : icmp
+	pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
+	pkt_icmp = pkt.get_protocol(icmp.icmp)
+        if pkt_icmp and pkt_icmp.type == icmp.ICMP_ECHO_REQUEST and pkt_ipv4.dst==self.ip_addr:	
+		self._handle_icmp(datapath, in_port, eth, pkt_ipv4, pkt_icmp)
+		return
+		
 
         dst = eth.dst
         src = eth.src
 
         dpid = datapath.id
-        self.logger.info("PacketIn\n"
-                        "DatapathId: %s\n"
-                        "Source %s\n"
-                        "Dest %s\n"
-                        "Port %s\n", dpid, src, dst, in_port)
+
+#        self.logger.info("PacketIn\n"
+#                        "DatapathId: %s\n"
+#                        "Source %s\n"
+ #                       "Dest %s\n"
+ #                       "Port %s\n", dpid, src, dst, in_port)
 
         self.mac_to_port.setdefault(dpid, {})
         # Learn the mac address (datapath with this address should go to that port)
@@ -97,4 +116,51 @@ class Controller(app_manager.RyuApp):
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions, data=data)
+        datapath.send_msg(out) 
+
+    def _handle_arp(self, datapath, port, pkt_ethernet, pkt_arp):
+        pkt = packet.Packet()
+        pkt.add_protocol(ethernet.ethernet(ethertype=pkt_ethernet.ethertype,
+                                           dst=pkt_ethernet.src,
+                                           src=self.hw_addr))
+        pkt.add_protocol(arp.arp(opcode=arp.ARP_REPLY,
+                                 src_mac=self.hw_addr,
+                                 src_ip=pkt_arp.dst_ip,
+                                 dst_mac=pkt_arp.src_mac,
+                                 dst_ip=pkt_arp.src_ip))
+	print("arp")	
+	print(pkt_arp.src_ip)
+	print(pkt_arp.dst_ip)
+	print('')        
+	self._send_packet(datapath, port, pkt)
+
+    def _handle_icmp(self, datapath, port, pkt_ethernet, pkt_ipv4, pkt_icmp):
+        pkt = packet.Packet()
+        pkt.add_protocol(ethernet.ethernet(ethertype=pkt_ethernet.ethertype,
+                                           dst=pkt_ethernet.src,
+                                           src=self.hw_addr))
+        pkt.add_protocol(ipv4.ipv4(dst=pkt_ipv4.src,
+                                   src=pkt_ipv4.dst,
+                                   proto=pkt_ipv4.proto))
+        pkt.add_protocol(icmp.icmp(type_=icmp.ICMP_ECHO_REPLY,
+                                   code=icmp.ICMP_ECHO_REPLY_CODE,
+                                   csum=0,
+                                   data=pkt_icmp.data))
+	print("icmp")		
+	print(pkt_ipv4.src)
+	print(pkt_ipv4.dst)		
+	print("")      
+	self._send_packet(datapath, port, pkt)
+
+    def _send_packet(self, datapath, port, pkt):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        pkt.serialize()
+        data = pkt.data
+        actions = [parser.OFPActionOutput(port=port)]
+        out = parser.OFPPacketOut(datapath=datapath,
+                                  buffer_id=ofproto.OFP_NO_BUFFER,
+                                  in_port=ofproto.OFPP_CONTROLLER,
+                                  actions=actions,
+                                  data=data)
         datapath.send_msg(out)
