@@ -15,8 +15,8 @@ class Controller(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(Controller, self).__init__(*args, **kwargs)
-        self.ip_addr="10.0.1.0"
-        self.hw_addr="66:66:66:66:66:66"
+        self.ip_addr="10.0.1.0" # controller's ip
+        self.hw_addr="66:66:66:66:66:66" # controller's MAC addr
         self.mac_to_port = {}  # Records the mac-port mapping
 
     
@@ -64,13 +64,19 @@ class Controller(app_manager.RyuApp):
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             return
 
-	# part only for controller's ping
+	'''
+	handle ping from host to controller 
+	a complete ping request include
+	step1: handle arp pkt from host
+	step2: handle icmp pkt from host
+	if pkt is not for controller,it will be handled as normal
+	'''
 	pkt_arp = pkt.get_protocol(arp.arp)
-	# step1 : arp
+	# step1 : arp request just for controller
 	if pkt_arp and pkt_arp.opcode == arp.ARP_REQUEST and pkt_arp.dst_ip == self.ip_addr: 
 		self._handle_arp(datapath, in_port, eth, pkt_arp)
 		return
-	# step2 : icmp
+	# step2 : icmp ping request just for controller
 	pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
 	pkt_icmp = pkt.get_protocol(icmp.icmp)
         if pkt_icmp and pkt_icmp.type == icmp.ICMP_ECHO_REQUEST and pkt_ipv4.dst==self.ip_addr:	
@@ -86,8 +92,8 @@ class Controller(app_manager.RyuApp):
 #        self.logger.info("PacketIn\n"
 #                        "DatapathId: %s\n"
 #                        "Source %s\n"
- #                       "Dest %s\n"
- #                       "Port %s\n", dpid, src, dst, in_port)
+#                        "Dest %s\n"
+#                        "Port %s\n", dpid, src, dst, in_port)
 
         self.mac_to_port.setdefault(dpid, {})
         # Learn the mac address (datapath with this address should go to that port)
@@ -127,11 +133,7 @@ class Controller(app_manager.RyuApp):
                                  src_mac=self.hw_addr,
                                  src_ip=pkt_arp.dst_ip,
                                  dst_mac=pkt_arp.src_mac,
-                                 dst_ip=pkt_arp.src_ip))
-	print("arp")	
-	print(pkt_arp.src_ip)
-	print(pkt_arp.dst_ip)
-	print('')        
+                                 dst_ip=pkt_arp.src_ip))        
 	self._send_packet(datapath, port, pkt)
 
     def _handle_icmp(self, datapath, port, pkt_ethernet, pkt_ipv4, pkt_icmp):
@@ -145,11 +147,7 @@ class Controller(app_manager.RyuApp):
         pkt.add_protocol(icmp.icmp(type_=icmp.ICMP_ECHO_REPLY,
                                    code=icmp.ICMP_ECHO_REPLY_CODE,
                                    csum=0,
-                                   data=pkt_icmp.data))
-	print("icmp")		
-	print(pkt_ipv4.src)
-	print(pkt_ipv4.dst)		
-	print("")      
+                                   data=pkt_icmp.data))      
 	self._send_packet(datapath, port, pkt)
 
     def _send_packet(self, datapath, port, pkt):
