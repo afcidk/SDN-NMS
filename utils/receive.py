@@ -1,8 +1,11 @@
 import os
-from scapy.all import sniff
+from scapy.all import *
 
 def handle(pkt):
-    pkt.show2()
+
+    if IP in pkt:
+        print('received from {}'.format(pkt[IP].src))
+    #pkt.show2()
 
 def main():
     iface = list(filter(lambda i: 'eth' in i, os.listdir('/sys/class/net/')))

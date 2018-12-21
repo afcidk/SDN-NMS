@@ -65,6 +65,7 @@ def myNetwork():
 
     info( '*** Post configure switches and hosts\n')
 
+    net.addNAT().configDefault()
     CLI(net)
     net.stop()
 

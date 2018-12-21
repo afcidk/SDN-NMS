@@ -19,19 +19,20 @@ def get_if():
 
 
 def main():
-    if len(sys.argv) < 2:
-        print('send.py <dst>')
+    if len(sys.argv) < 3:
+        print('Usage: ./send.py <src_ip> <dst_ip>')
         exit(1)
 
-    addr = socket.gethostbyname(sys.argv[1])
+    src_ip = sys.argv[1]
+    dst_ip = sys.argv[2]
     iface = get_if()
 
-    pkt = Ether(src=get_if_hwaddr(iface), dst='ff:ff:ff:ff:ff:ff') / IP(dst=addr)
+    pkt = IP(src=src_ip, dst=dst_ip)
 
     pkt.show2()
     try:
         while True:
-            sendp(pkt, iface=iface)
+            send(pkt, iface=iface)
             sleep(1)
     except KeyboardInterrupt:
         pass
