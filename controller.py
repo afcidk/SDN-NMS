@@ -9,7 +9,7 @@ from ryu.lib.packet import ether_types
 from ryu.lib.packet import arp
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import icmp
-
+ 
 IP_GROUP = [['10.0.0.{}'.format(i) for i in range(1, 4)],
             ['10.0.0.{}'.format(i) for i in range(4, 7)],
             ['10.0.1.0']]
