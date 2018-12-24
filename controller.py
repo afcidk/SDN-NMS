@@ -36,6 +36,7 @@ class Controller(app_manager.RyuApp):
                                              actions)]
         self.add_flow(datapath, 0, 0, match, inst)
         self.send_group_mod(datapath)
+        self.group_stats_request(datapath)
 
     # This function helps add flow entry to switch's flow table 
     # TODO: Insert different flow entries.
@@ -70,7 +71,13 @@ class Controller(app_manager.RyuApp):
 
         datapath.send_msg(req)
 
+    def group_stats_request(self, datapath):
+        ofp = datapath.ofproto
+        ofp_parser = datapath.ofproto_parser
 
+        req = ofp_parser.OFPGroupStatsRequest(datapath, 0, ofp.OFPG_ALL)
+
+        datapath.send_msg(req)
     # The packet in handler, flows that cannot be parsed by switches
     # will be sent as a PacketIn to controller
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
