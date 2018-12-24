@@ -4,22 +4,24 @@ from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_2
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet   
+from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
 from ryu.lib.packet import arp
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import icmp
-IP_GROUP = [['10.0.0.{}'.format(i) for i in range(1, 4)], 
+
+IP_GROUP = [['10.0.0.{}'.format(i) for i in range(1, 4)],
             ['10.0.0.{}'.format(i) for i in range(4, 7)],
             ['10.0.1.0']]
+
 
 class Controller(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_2.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
         super(Controller, self).__init__(*args, **kwargs)
-        self.ip_addr="10.0.1.0" # controller's ip
-        self.hw_addr="66:66:66:66:66:66" # controller's MAC addr
+        self.ip_addr = "10.0.1.0"  # controller's ip
+        self.hw_addr = "66:66:66:66:66:66"  # controller's MAC addr
         self.mac_to_port = {}  # Records the mac-port mapping
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -33,7 +35,7 @@ class Controller(app_manager.RyuApp):
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
                                              actions)]
         self.add_flow(datapath, 0, 0, match, inst)
-    
+
     # This function helps add flow entry to switch's flow table 
     # TODO: Insert different flow entries.
     #       Some action should be redirected to match other flow table 
@@ -48,19 +50,60 @@ class Controller(app_manager.RyuApp):
 
         datapath.send_msg(mod)
 
+    def send_group_mod(self, datapath, group_id, port1, port2):
+        ofp = datapath.ofproto
+        ofp_parser = datapath.ofproto_parser
+
+        max_len = 2000
+        actions1 = [ofp_parser.OFPActionOutput(port1, max_len)]
+        actions2 = [ofp_parser.OFPActionOutput(port2, max_len)]
+
+        weight = 0
+        watch_group = 0
+        buckets = [ofp_parser.OFPBucket(weight, port1, watch_group, actions1),
+                   ofp_parser.OFPBucket(weight, port2, watch_group, actions2)]
+
+        req = ofp_parser.OFPGroupMod(datapath, ofp.OFPGC_ADD,
+                                     ofp.OFPGT_FF,
+                                     group_id, buckets)
+
+        datapath.send_msg(req)
+
+    def install_entry(self, datapath, dst, group_id):
+        ofproto = datapath.ofproto
+        ofproto_parser = datapath.ofproto_parser
+
+        match = ofproto_parser.OFPMatch(eth_dst=dst)
+        actions = [ofproto_parser.OFPActionGroup(group_id=group_id)]
+        inst = [ofproto_parser.OFPInstructionActions(
+            ofproto.OFPIT_APPLY_ACTIONS, actions)]
+
+        mod = ofproto_parser.OFPFlowMod(
+            datapath=datapath,
+            match=match,
+            cookie=group_id,
+            command=ofproto.OFPFC_ADD,
+            idle_timeout=0,
+            hard_timeout=0,
+            priority=ofproto.OFP_DEFAULT_PRIORITY,
+            flags=ofproto.OFPFF_SEND_FLOW_REM,
+            instructions=inst)
+
+        datapath.send_msg(mod)
+
     # The packet in handler, flows that cannot be parsed by switches
     # will be sent as a PacketIn to controller
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
-        datapath = msg.datapath # Datapath instance helps connect to switch
+        datapath = msg.datapath  # Datapath instance helps connect to switch
         ofproto = datapath.ofproto
         in_port = msg.match['in_port']
 
         ################## TODO: Extract and filter packet here ##############
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
-  
+
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             return
 
@@ -73,24 +116,23 @@ class Controller(app_manager.RyuApp):
         '''
         pkt_arp = pkt.get_protocol(arp.arp)
         # step1 : arp request just for controller
-        if pkt_arp and pkt_arp.opcode == arp.ARP_REQUEST and pkt_arp.dst_ip == self.ip_addr: 
-                self._handle_arp(datapath, in_port, eth, pkt_arp)
-                return
+        if pkt_arp and pkt_arp.opcode == arp.ARP_REQUEST and pkt_arp.dst_ip == self.ip_addr:
+            self._handle_arp(datapath, in_port, eth, pkt_arp)
+            return
         # step2 : icmp ping request just for controller
         pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
         pkt_icmp = pkt.get_protocol(icmp.icmp)
-        if pkt_icmp and pkt_icmp.type == icmp.ICMP_ECHO_REQUEST and pkt_ipv4.dst==self.ip_addr: 
-                self._handle_icmp(datapath, in_port, eth, pkt_ipv4, pkt_icmp)
-                return
+        if pkt_icmp and pkt_icmp.type == icmp.ICMP_ECHO_REQUEST and pkt_ipv4.dst == self.ip_addr:
+            self._handle_icmp(datapath, in_port, eth, pkt_ipv4, pkt_icmp)
+            return
 
         self._packet_filter(msg, datapath)
 
-
     def _packet_filter(self, msg, datapath):
-        in_port  = msg.match['in_port']
+        in_port = msg.match['in_port']
         ofproto = datapath.ofproto
         pkt = packet.Packet(msg.data)
-        pkt_eth  = pkt.get_protocol(ethernet.ethernet)
+        pkt_eth = pkt.get_protocol(ethernet.ethernet)
         pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
         parser = datapath.ofproto_parser
         dpid = datapath.id
@@ -104,7 +146,7 @@ class Controller(app_manager.RyuApp):
         # Find which port should we send to 
         if eth_dst in self.mac_to_port[dpid]:
             out_port = self.mac_to_port[dpid][eth_dst]
-        else: # No records, flooding
+        else:  # No records, flooding
             out_port = ofproto.OFPP_FLOOD
 
         # Insert entry into switch
@@ -113,51 +155,53 @@ class Controller(app_manager.RyuApp):
 
             match = parser.OFPMatch(in_port=in_port)
             # Parse port first (Table ID = 0)
-            if in_port > 3: # Illegal port, drop
+            if in_port > 3:  # Illegal port, drop
                 inst = [parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])]
                 self.add_flow(datapath, 0, 1, match, inst)
                 actions = []
             else:  # Forward to table 1
                 inst = [parser.OFPInstructionGotoTable(1)]
                 self.add_flow(datapath, 0, 1, match, inst)
+                self.send_group_mod(datapath, 1, 1, 2)
+                self.send_group_mod(datapath, 2, 2, 3)
+                self.send_group_mod(datapath, 3, 3, 1)
 
                 if pkt_ipv4:
                     # table 1
                     src_cat, src_group = self._categorize(pkt_ipv4.src)
                     dst_cat, dst_group = self._categorize(pkt_ipv4.dst)
 
-                    match = parser.OFPMatch(in_port=in_port, ipv4_src=pkt_ipv4.src, ipv4_dst=pkt_ipv4.dst, eth_type=0x0800)
-                    if src_cat == 'Internal' and dst_cat == 'External': # Drop
+                    match = parser.OFPMatch(in_port=in_port, ipv4_src=pkt_ipv4.src, ipv4_dst=pkt_ipv4.dst,
+                                            eth_type=0x0800)
+                    if src_cat == 'Internal' and dst_cat == 'External':  # Drop
                         print('here')
                         inst = [parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])]
                         actions = []
-                    elif src_cat == 'External' and dst_cat == 'Internal': # Forward
+                    elif src_cat == 'External' and dst_cat == 'Internal':  # Forward
                         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-                    elif src_group == dst_group: # Forward
+                    elif src_group == dst_group:  # Forward
                         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-                    else: # Drop
+                    else:  # Drop
                         inst = [parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])]
                         actions = []
 
                     self.add_flow(datapath, 1, 1, match, inst)
 
         data = None
-        if msg.buffer_id == ofproto.OFP_NO_BUFFER: 
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data
-            
+
         # Send PacketOut message back to the switch
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions, data=data)
-        datapath.send_msg(out) 
+        datapath.send_msg(out)
 
-        
     def _categorize(self, addr):
         for i in range(len(IP_GROUP)):
             if addr in IP_GROUP[i]:
-                return 'Internal', 'Group'+str(i)
+                return 'Internal', 'Group' + str(i)
         return 'External', None
-
 
     def _handle_arp(self, datapath, port, pkt_ethernet, pkt_arp):
         pkt = packet.Packet()
@@ -168,7 +212,7 @@ class Controller(app_manager.RyuApp):
                                  src_mac=self.hw_addr,
                                  src_ip=pkt_arp.dst_ip,
                                  dst_mac=pkt_arp.src_mac,
-                                 dst_ip=pkt_arp.src_ip))        
+                                 dst_ip=pkt_arp.src_ip))
         self._send_packet(datapath, port, pkt)
 
     def _handle_icmp(self, datapath, port, pkt_ethernet, pkt_ipv4, pkt_icmp):
@@ -182,7 +226,7 @@ class Controller(app_manager.RyuApp):
         pkt.add_protocol(icmp.icmp(type_=icmp.ICMP_ECHO_REPLY,
                                    code=icmp.ICMP_ECHO_REPLY_CODE,
                                    csum=0,
-                                   data=pkt_icmp.data))      
+                                   data=pkt_icmp.data))
         self._send_packet(datapath, port, pkt)
 
     def _send_packet(self, datapath, port, pkt):
