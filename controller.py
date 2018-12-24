@@ -35,6 +35,7 @@ class Controller(app_manager.RyuApp):
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
                                              actions)]
         self.add_flow(datapath, 0, 0, match, inst)
+        self.send_group_mod(datapath)
 
     # This function helps add flow entry to switch's flow table 
     # TODO: Insert different flow entries.
@@ -50,46 +51,25 @@ class Controller(app_manager.RyuApp):
 
         datapath.send_msg(mod)
 
-    def send_group_mod(self, datapath, group_id, port1, port2):
+    def send_group_mod(self, datapath):
         ofp = datapath.ofproto
         ofp_parser = datapath.ofproto_parser
 
+        port = 1
         max_len = 2000
-        actions1 = [ofp_parser.OFPActionOutput(port1, max_len)]
-        actions2 = [ofp_parser.OFPActionOutput(port2, max_len)]
-
-        weight = 0
+        actions = [ofp_parser.OFPActionOutput(port, max_len)]
+        weight = 100
+        watch_port = 0
         watch_group = 0
-        buckets = [ofp_parser.OFPBucket(weight, port1, watch_group, actions1),
-                   ofp_parser.OFPBucket(weight, port2, watch_group, actions2)]
+        buckets = [ofp_parser.OFPBucket(weight, watch_port, watch_group,
+                                        actions)]
+        group_id = 1
 
         req = ofp_parser.OFPGroupMod(datapath, ofp.OFPGC_ADD,
-                                     ofp.OFPGT_FF,
-                                     group_id, buckets)
+                                     ofp.OFPGT_SELECT, group_id, buckets)
 
         datapath.send_msg(req)
 
-    def install_entry(self, datapath, dst, group_id):
-        ofproto = datapath.ofproto
-        ofproto_parser = datapath.ofproto_parser
-
-        match = ofproto_parser.OFPMatch(eth_dst=dst)
-        actions = [ofproto_parser.OFPActionGroup(group_id=group_id)]
-        inst = [ofproto_parser.OFPInstructionActions(
-            ofproto.OFPIT_APPLY_ACTIONS, actions)]
-
-        mod = ofproto_parser.OFPFlowMod(
-            datapath=datapath,
-            match=match,
-            cookie=group_id,
-            command=ofproto.OFPFC_ADD,
-            idle_timeout=0,
-            hard_timeout=0,
-            priority=ofproto.OFP_DEFAULT_PRIORITY,
-            flags=ofproto.OFPFF_SEND_FLOW_REM,
-            instructions=inst)
-
-        datapath.send_msg(mod)
 
     # The packet in handler, flows that cannot be parsed by switches
     # will be sent as a PacketIn to controller
@@ -162,9 +142,7 @@ class Controller(app_manager.RyuApp):
             else:  # Forward to table 1
                 inst = [parser.OFPInstructionGotoTable(1)]
                 self.add_flow(datapath, 0, 1, match, inst)
-                self.send_group_mod(datapath, 1, 1, 2)
-                self.send_group_mod(datapath, 2, 2, 3)
-                self.send_group_mod(datapath, 3, 3, 1)
+
 
                 if pkt_ipv4:
                     # table 1
