@@ -56,17 +56,17 @@ class Controller(app_manager.RyuApp):
         ofp = datapath.ofproto
         ofp_parser = datapath.ofproto_parser
 
-        port_1 = 3
+        port_1 = 1
         actions_1 = [ofp_parser.OFPActionOutput(port_1)]
 
         port_2 = 2
         actions_2 = [ofp_parser.OFPActionOutput(port_2)]
 
-        weight_1 = 50
+        weight_1 = 60
         weight_2 = 50
 
-        watch_port = ofproto_v1_3.OFPP_ANY
-        watch_group = ofproto_v1_3.OFPQ_ALL
+        watch_port = ofproto_v1_2.OFPP_ANY
+        watch_group = ofproto_v1_2.OFPQ_ALL
 
         buckets = [
             ofp_parser.OFPBucket(weight_1, watch_port, watch_group, actions_1),
