@@ -36,7 +36,7 @@ class Controller(app_manager.RyuApp):
                                              actions)]
         self.add_flow(datapath, 0, 0, match, inst)
         self.send_group_mod(datapath)
-        self.group_stats_request(datapath)
+        # self.group_stats_request(datapath)
 
     # This function helps add flow entry to switch's flow table 
     # TODO: Insert different flow entries.
@@ -56,18 +56,26 @@ class Controller(app_manager.RyuApp):
         ofp = datapath.ofproto
         ofp_parser = datapath.ofproto_parser
 
-        port = 1
-        max_len = 2000
-        actions = [ofp_parser.OFPActionOutput(port, max_len)]
-        weight = 100
-        watch_port = 0
-        watch_group = 0
-        buckets = [ofp_parser.OFPBucket(weight, watch_port, watch_group,
-                                        actions)]
-        group_id = 1
+        port_1 = 3
+        actions_1 = [ofp_parser.OFPActionOutput(port_1)]
 
-        req = ofp_parser.OFPGroupMod(datapath, ofp.OFPGC_ADD,
-                                     ofp.OFPGT_SELECT, group_id, buckets)
+        port_2 = 2
+        actions_2 = [ofp_parser.OFPActionOutput(port_2)]
+
+        weight_1 = 50
+        weight_2 = 50
+
+        watch_port = ofproto_v1_3.OFPP_ANY
+        watch_group = ofproto_v1_3.OFPQ_ALL
+
+        buckets = [
+            ofp_parser.OFPBucket(weight_1, watch_port, watch_group, actions_1),
+        ofp_parser.OFPBucket(weight_2, watch_port, watch_group, actions_2)]
+
+        group_id = 50
+        req = ofp_parser.OFPGroupMod(
+            datapath, ofp.OFPFC_ADD,
+            ofp.OFPGT_SELECT, group_id, buckets)
 
         datapath.send_msg(req)
 
