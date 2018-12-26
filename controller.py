@@ -39,7 +39,6 @@ class Controller(app_manager.RyuApp):
         # self.group_stats_request(datapath)
 
     # This function helps add flow entry to switch's flow table 
-    # TODO: Insert different flow entries.
     #       Some action should be redirected to match other flow table 
     #       (Multiple flow table pipeline packet processing)
     def add_flow(self, datapath, table_id, priority, match, inst):
@@ -70,7 +69,8 @@ class Controller(app_manager.RyuApp):
 
         buckets = [
             ofp_parser.OFPBucket(weight_1, watch_port, watch_group, actions_1),
-        ofp_parser.OFPBucket(weight_2, watch_port, watch_group, actions_2)]
+            ofp_parser.OFPBucket(weight_2, watch_port, watch_group, actions_2)
+        ]
 
         group_id = 50
         req = ofp_parser.OFPGroupMod(
@@ -86,6 +86,7 @@ class Controller(app_manager.RyuApp):
         req = ofp_parser.OFPGroupStatsRequest(datapath, 0, ofp.OFPG_ALL)
 
         datapath.send_msg(req)
+
     # The packet in handler, flows that cannot be parsed by switches
     # will be sent as a PacketIn to controller
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -95,7 +96,6 @@ class Controller(app_manager.RyuApp):
         ofproto = datapath.ofproto
         in_port = msg.match['in_port']
 
-        ################## TODO: Extract and filter packet here ##############
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
 
@@ -118,6 +118,7 @@ class Controller(app_manager.RyuApp):
         pkt_ipv4 = pkt.get_protocol(ipv4.ipv4)
         pkt_icmp = pkt.get_protocol(icmp.icmp)
         if pkt_icmp and pkt_icmp.type == icmp.ICMP_ECHO_REQUEST and pkt_ipv4.dst == self.ip_addr:
+            print('sending icmp reply to {}...'.format(pkt_ipv4.src))
             self._handle_icmp(datapath, in_port, eth, pkt_ipv4, pkt_icmp)
             return
 
